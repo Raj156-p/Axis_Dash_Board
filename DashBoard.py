@@ -34,7 +34,7 @@ import {
 } from "./lib/stockData";
 import Candlestick from "./components/Candlestick";
 
-// ─── Brand & Style Constants ─────────────────────────────────────────────────
+// # Brand & Style Constants ─────────────────────────────────────────────────
 
 const AXIS_BRAND_COLOR = "#97144D"; // Axis Bank's signature maroon
 const AXIS_BRAND_HOVER = "#7d0f40"; // Darker shade for hover states
