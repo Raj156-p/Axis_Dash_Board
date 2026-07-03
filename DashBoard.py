@@ -74,7 +74,7 @@ function Kpi({
 }) {
   return (
     <div
-      className={`rounded-2xl border p-4 shadow-sm ${
+      className={`rounded 2xl border p-4 shadow-sm ${
         accent
           ? "border-transparent bg-gradient-to-br from-[#97144D] to-[#c41d63] text-white"
           : "border-slate-200 bg-white"
