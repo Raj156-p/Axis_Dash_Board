@@ -1,8 +1,3 @@
-"""
-Axis Bank Stock Dashboard
-A Streamlit application for stock analysis with technical indicators
-"""
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -11,7 +6,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import random
 
-# Page configuration
 st.set_page_config(
     page_title="Axis Bank Stock Analyzer",
     page_icon="📈",
@@ -19,7 +13,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
 st.markdown("""
 <style>
     .main-header {
@@ -74,8 +67,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-
-# Seeded random for reproducible scenarios
 def seeded_random(seed: int):
     random.seed(seed)
     def random_func():
@@ -84,8 +75,6 @@ def seeded_random(seed: int):
         return seed / 0x7fffffff
     return random_func
 
-
-# Generate simulated stock data
 def generate_bars(symbol: str, start_date: datetime, end_date: datetime, max_bars: int = 950) -> pd.DataFrame:
     seed = sum(ord(c) for c in symbol) + int(start_date.timestamp())
     rng = seeded_random(seed)
@@ -124,7 +113,6 @@ def generate_bars(symbol: str, start_date: datetime, end_date: datetime, max_bar
     df = pd.DataFrame(data)
     return enrich_bars(df)
 
-
 def enrich_bars(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df['SMA_50'] = df['Close'].rolling(window=50).mean()
@@ -148,7 +136,6 @@ def enrich_bars(df: pd.DataFrame) -> pd.DataFrame:
     df['Daily_Return'] = df['Close'].pct_change() * 100
     return df
 
-
 def monthly_volume(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df['Month'] = df['Date'].dt.to_period('M')
@@ -156,10 +143,8 @@ def monthly_volume(df: pd.DataFrame) -> pd.DataFrame:
     monthly['Month'] = monthly['Month'].astype(str)
     return monthly
 
-
 def format_inr(value: float) -> str:
     return f"₹{value:,.2f}"
-
 
 def format_compact(value: int) -> str:
     if value >= 10000000:
@@ -170,11 +155,9 @@ def format_compact(value: int) -> str:
         return f"{value/1000:.1f} K"
     return str(value)
 
-
 def main():
     st.markdown('<p class="main-header">Axis Bank Stock Dashboard</p>', unsafe_allow_html=True)
     
-    # Sidebar controls
     with st.sidebar:
         st.markdown("### 📊 Controls")
         symbol = st.text_input("Stock Symbol", value="AXISBANK.NS")
@@ -197,16 +180,16 @@ def main():
                                    datetime.combine(end_date, datetime.min.time()))
                 st.session_state['df'] = df
                 st.session_state['symbol'] = symbol
+                st.session_state['analyze'] = False 
         else:
             st.error("Please select a valid date range")
             return
-    
+            
     df = st.session_state['df']
     if df is None or len(df) == 0:
         st.warning("No data available.")
         return
     
-    # Monthly Volume chart (fixed)
     st.subheader("📊 Monthly Trading Volume")
     monthly_df = monthly_volume(df)
     fig_vol = go.Figure()
@@ -222,5 +205,10 @@ def main():
         xaxis_title='',
         yaxis_title='Volume',
         showlegend=False,
-        margin=dict(l=40, r=40, t=40
-                   ))
+        margin=dict(l=40, r=40, t=40)
+    )
+    
+    st.plotly_chart(fig_vol, use_container_width=True)
+
+if __name__ == "__main__":
+    main()
