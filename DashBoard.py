@@ -1,417 +1,370 @@
-import { useMemo, useState } from "react";
-import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ReferenceLine,
-  Cell,
-} from "recharts";
-import {
-  TrendingUp,
-  Activity,
-  BarChart3,
-  Download,
-  Play,
-  Landmark,
-  ArrowUpRight,
-  ArrowDownRight,
-} from "lucide-react";
-import {
-  generateBars,
-  enrichBars,
-  monthlyVolume,
-  formatINR,
-  formatCompact,
-  toCSV,
-  type EnrichedBar,
-} from "./lib/stockData";
-import Candlestick from "./components/Candlestick";
+import streamlit as st
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import yfinance as yf
+import plotly.graph_objects as go
+from PIL import Image
+import requests
+from io import BytesIO
+import os
 
-const AXIS_MAROON = "#97144D"; // Axis Bank brand color
+# --------------------------------------------------
+# PAGE CONFIGURATION
+# --------------------------------------------------
+st.set_page_config(
+    page_title="Axis Bank Stock Dashboard",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-function ChartCard({
-  title,
-  subtitle,
-  children,
-  right,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-  right?: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold text-slate-800">{title}</h3>
-          {subtitle && <p className="mt-0.5 text-sm text-slate-400">{subtitle}</p>}
+# --------------------------------------------------
+# CUSTOM STYLING
+# --------------------------------------------------
+st.markdown("""
+<style>
+    .main-header { font-size: 2.2rem; font-weight: 700; color: #1e293b; margin-bottom: 0.2rem; }
+    .sub-header { font-size: 1rem; color: #64748b; margin-bottom: 2rem; }
+    
+    .kpi-container { display: flex; gap: 1rem; margin-bottom: 2rem; }
+    
+    .kpi-card-main {
+        flex: 1; background: #97144D; border-radius: 12px; padding: 1.5rem 1rem; 
+        color: white; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    .kpi-card-neutral {
+        flex: 1; background: white; border-radius: 12px; padding: 1.5rem 1rem; 
+        border: 1px solid #e2e8f0; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    
+    .kpi-label { font-size: 0.75rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; opacity: 0.8; margin-bottom: 0.5rem; }
+    .kpi-label-neutral { font-size: 0.75rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; color: #64748b; margin-bottom: 0.5rem; }
+    
+    .kpi-value { font-size: 1.8rem; font-weight: 700; margin-bottom: 0.2rem; }
+    .kpi-value-neutral { font-size: 1.8rem; font-weight: 700; color: #1e293b; margin-bottom: 0.2rem; }
+    
+    .kpi-hint { font-size: 0.8rem; opacity: 0.9; }
+    .kpi-hint-neutral { font-size: 0.8rem; color: #64748b; }
+    
+    .kpi-hint-up { font-size: 0.85rem; color: #a3e635; font-weight: 600; }
+    .kpi-hint-down { font-size: 0.85rem; color: #f87171; font-weight: 600; }
+    
+    .stButton>button { width: 100%; border-radius: 6px; }
+    .btn-analyze>button { background-color: #97144D; color: white; border: none; }
+    .btn-analyze>button:hover { background-color: #7a0f3d; color: white; }
+</style>
+""", unsafe_allow_html=True)
+
+# --------------------------------------------------
+# HELPER FUNCTIONS
+# --------------------------------------------------
+@st.cache_data
+def load_logo():
+    local_path = r"C:\projectworks\test_folder\Axis_logo.png"
+    if os.path.exists(local_path):
+        return Image.open(local_path)
+    try:
+        url = "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Axis_Bank_logo.svg/512px-Axis_Bank_logo.svg.png"
+        r = requests.get(url, timeout=5)
+        return Image.open(BytesIO(r.content))
+    except Exception:
+        return None
+
+def format_compact(value: float) -> str:
+    if pd.isna(value): return "0"
+    if value >= 10000000:
+        return f"{value/10000000:.1f} Cr"
+    elif value >= 100000:
+        return f"{value/100000:.1f} L"
+    elif value >= 1000:
+        return f"{value/1000:.1f} K"
+    return str(int(value))
+
+# --------------------------------------------------
+# MAIN APPLICATION
+# --------------------------------------------------
+def main():
+    # Sidebar
+    with st.sidebar:
+        logo = load_logo()
+        if logo:
+            st.image(logo, width=150)
+            
+        st.markdown("### Stock Symbol")
+        symbol = st.text_input("", value="AXISBANK.NS", label_visibility="collapsed")
+        
+        start_date = st.date_input("Start Date", value=pd.to_datetime("2024-01-01"))
+        end_date = st.date_input("End Date", value=pd.to_datetime("today"))
+        
+        show_bollinger = st.checkbox("Show Bollinger Bands", value=True)
+        
+        st.markdown('<div class="btn-analyze">', unsafe_allow_html=True)
+        run_analysis = st.button("▶ Analyze", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        download_placeholder = st.empty()
+
+    # Main Dashboard Header
+    st.markdown('<div class="main-header">Axis Bank Stock Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Advanced technical analysis and market indicators</div>', unsafe_allow_html=True)
+
+    if not run_analysis and 'df' not in st.session_state:
+        st.info("Click Analyze to fetch market data.")
+        return
+
+    # Data Fetching and Processing Execution
+    if run_analysis:
+        with st.spinner("Fetching data from Yahoo Finance..."):
+            df = yf.download(symbol, start=start_date, end=end_date, auto_adjust=True, progress=False)
+            
+            if df.empty:
+                st.error("No data found for this stock and date range.")
+                return
+
+            # Clean MultiIndex columns resulting from yfinance update
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+                
+            # Reset index so 'Date' becomes an accessible column, not just the index
+            df.reset_index(inplace=True)
+            
+            # --- CALCULATE DEPENDENT INDICATORS ---
+            df['Daily_Return_Pct'] = df['Close'].pct_change() * 100
+            
+            df['SMA_50'] = df['Close'].rolling(window=50).mean()
+            df['SMA_200'] = df['Close'].rolling(window=200).mean()
+            
+            df['EMA_12'] = df['Close'].ewm(span=12, adjust=False).mean()
+            df['EMA_26'] = df['Close'].ewm(span=26, adjust=False).mean()
+            df['MACD'] = df['EMA_12'] - df['EMA_26']
+            df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+            df['Histogram'] = df['MACD'] - df['Signal']
+            
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            df['RSI'] = 100 - (100 / (1 + rs))
+            
+            df['BB_Middle'] = df['Close'].rolling(window=20).mean()
+            bb_std = df['Close'].rolling(window=20).std()
+            df['BB_Upper'] = df['BB_Middle'] + (bb_std * 2)
+            df['BB_Lower'] = df['BB_Middle'] - (bb_std * 2)
+            
+            df['High_52W'] = df['High'].rolling(window=252).max()
+            df['Low_52W'] = df['Low'].rolling(window=252).min()
+            
+            # Drop initial rows where rolling calculations are NaN
+            df.dropna(inplace=True)
+            
+            st.session_state.df = df
+            st.session_state.symbol = symbol
+
+    df = st.session_state.df
+
+    # Populate Download Button Post-Calculation
+    csv = df.to_csv(index=False).encode('utf-8')
+    with download_placeholder:
+        st.download_button(
+            label="⤓ Download CSV",
+            data=csv,
+            file_name=f"{st.session_state.symbol}_market_data.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    # --------------------------------------------------
+    # KPI CARDS
+    # --------------------------------------------------
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
+    change = latest['Close'] - prev['Close']
+    change_pct = latest['Daily_Return_Pct']
+    
+    change_class = "kpi-hint-up" if change >= 0 else "kpi-hint-down"
+    change_sign = "+" if change >= 0 else ""
+    
+    avg_52h = df['High_52W'].mean()
+    avg_52l = df['Low_52W'].mean()
+    total_vol = df['Volume'].sum()
+    
+    kpi_html = f"""
+    <div class="kpi-container">
+        <div class="kpi-card-main">
+            <div class="kpi-label">LATEST CLOSE</div>
+            <div class="kpi-value">₹{float(latest['Close']):,.2f}</div>
+            <div class="{change_class}">{change_sign}{float(change_pct):.2f}%</div>
         </div>
-        {right}
-      </div>
-      {children}
+        <div class="kpi-card-neutral">
+            <div class="kpi-label-neutral">AVG 52W HIGH</div>
+            <div class="kpi-value-neutral">₹{float(avg_52h):,.2f}</div>
+            <div class="kpi-hint-neutral">Rolling Maximum</div>
+        </div>
+        <div class="kpi-card-neutral">
+            <div class="kpi-label-neutral">AVG 52W LOW</div>
+            <div class="kpi-value-neutral">₹{float(avg_52l):,.2f}</div>
+            <div class="kpi-hint-neutral">Rolling Minimum</div>
+        </div>
+        <div class="kpi-card-neutral">
+            <div class="kpi-label-neutral">TOTAL VOLUME</div>
+            <div class="kpi-value-neutral">{format_compact(float(total_vol))}</div>
+            <div class="kpi-hint-neutral">Shares Traded</div>
+        </div>
+        <div class="kpi-card-neutral">
+            <div class="kpi-label-neutral">LATEST RSI</div>
+            <div class="kpi-value-neutral">{float(latest['RSI']):.2f}</div>
+            <div class="kpi-hint-neutral">{'Overbought' if latest['RSI']>70 else 'Oversold' if latest['RSI']<30 else 'Neutral'}</div>
+        </div>
     </div>
-  );
-}
+    """
+    st.markdown(kpi_html, unsafe_allow_html=True)
 
-function Kpi({
-  label,
-  value,
-  hint,
-  accent,
-}: {
-  label: string;
-  value: string;
-  hint?: React.ReactNode;
-  accent?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded 2xl border p-4 shadow-sm ${
-        accent
-          ? "border-transparent bg-gradient-to-br from-[#97144D] to-[#c41d63] text-white"
-          : "border-slate-200 bg-white"
-      }`}
-    >
-      <div className={`text-xs font-medium uppercase tracking-wide ${accent ? "text-white/70" : "text-slate-400"}`}>
-        {label}
-      </div>
-      <div className={`mt-2 text-2xl font-bold ${accent ? "text-white" : "text-slate-800"}`}>{value}</div>
-      {hint && <div className={`mt-1 text-xs ${accent ? "text-white/80" : "text-slate-400"}`}>{hint}</div>}
-    </div>
-  );
-}
+    # --------------------------------------------------
+    # CHART 1: Price with Moving Averages
+    # --------------------------------------------------
+    st.markdown("#### Price with Moving Averages")
+    st.markdown("<span style='color:#64748b; font-size:0.9rem;'>Close Price, SMA 50 and SMA 200</span>", unsafe_allow_html=True)
+    
+    fig_price = go.Figure()
+    fig_price.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name='Close', line=dict(color='#97144D', width=2)))
+    fig_price.add_trace(go.Scatter(x=df['Date'], y=df['SMA_200'], name='SMA 200', line=dict(color='#eab308', width=2)))
+    fig_price.add_trace(go.Scatter(x=df['Date'], y=df['SMA_50'], name='SMA 50', line=dict(color='#3b82f6', width=2)))
+    
+    fig_price.update_layout(
+        height=400, margin=dict(l=20, r=20, t=20, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+        plot_bgcolor='white', paper_bgcolor='white',
+        xaxis=dict(showgrid=True, gridcolor='#f1f5f9'),
+        yaxis=dict(showgrid=True, gridcolor='#f1f5f9')
+    )
+    st.plotly_chart(fig_price, use_container_width=True)
 
-export default function App() {
-  const [symbol, setSymbol] = useState("AXISBANK.NS");
-  const [start, setStart] = useState("2023-01-01");
-  const [end, setEnd] = useState(new Date().toISOString().slice(0, 10));
-  const [showBollinger, setShowBollinger] = useState(true);
-  const [ran, setRan] = useState(true);
-  const [nonce, setNonce] = useState(0);
+    # --------------------------------------------------
+    # CHART 2: Candlestick + Bollinger 
+    # --------------------------------------------------
+    st.markdown("#### Candlestick with Bollinger Bands")
+    st.markdown("<span style='color:#64748b; font-size:0.9rem;'>OHLC price action</span>", unsafe_allow_html=True)
+    
+    fig_candle = go.Figure()
+    fig_candle.add_trace(go.Candlestick(
+        x=df['Date'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
+        name='Candlestick',
+        increasing_line_color='#22c55e', decreasing_line_color='#ef4444'
+    ))
+    
+    if show_bollinger:
+        fig_candle.add_trace(go.Scatter(x=df['Date'], y=df['BB_Upper'], name='Bollinger Upper', line=dict(color='rgba(168, 85, 247, 0.5)', dash='dash')))
+        fig_candle.add_trace(go.Scatter(x=df['Date'], y=df['BB_Middle'], name='Bollinger Middle', line=dict(color='rgba(168, 85, 247, 0.8)', dash='dot')))
+        fig_candle.add_trace(go.Scatter(x=df['Date'], y=df['BB_Lower'], name='Bollinger Lower', line=dict(color='rgba(168, 85, 247, 0.5)', dash='dash')))
 
-  const bars: EnrichedBar[] = useMemo(() => {
-    void nonce;
-    const s = new Date(start);
-    const e = new Date(end);
-    if (isNaN(s.getTime()) || isNaN(e.getTime()) || s >= e) return [];
-    const raw = generateBars(symbol, s, e, 950);
-    return enrichBars(raw);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ran, nonce]);
+    last_date = df['Date'].max()
+    start_view = last_date - timedelta(days=90)
 
-  const monthly = useMemo(() => monthlyVolume(bars), [bars]);
+    fig_candle.update_layout(
+        height=450, margin=dict(l=20, r=20, t=20, b=20),
+        xaxis_rangeslider_visible=False,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+        plot_bgcolor='white', paper_bgcolor='white',
+        xaxis=dict(
+            showgrid=True, gridcolor='#f1f5f9',
+            range=[start_view, last_date],
+            rangebreaks=[dict(bounds=["sat", "mon"])]
+        ),
+        yaxis=dict(showgrid=True, gridcolor='#f1f5f9')
+    )
+    st.plotly_chart(fig_candle, use_container_width=True)
 
-  const kpis = useMemo(() => {
-    if (bars.length === 0) return null;
-    const last = bars[bars.length - 1];
-    const prev = bars[bars.length - 2] ?? last;
-    const h52 = bars.filter((b) => b.high52w != null);
-    const l52 = bars.filter((b) => b.low52w != null);
-    const avgHigh = h52.length ? h52.reduce((a, b) => a + (b.high52w ?? 0), 0) / h52.length : last.high;
-    const avgLow = l52.length ? l52.reduce((a, b) => a + (b.low52w ?? 0), 0) / l52.length : last.low;
-    const totalVol = bars.reduce((a, b) => a + b.volume, 0);
-    const dayChange = last.close - prev.close;
-    const dayChangePct = (dayChange / prev.close) * 100;
-    return {
-      lastClose: last.close,
-      avgHigh,
-      avgLow,
-      totalVol,
-      rsi: last.rsi ?? 0,
-      dayChange,
-      dayChangePct,
-    };
-  }, [bars]);
+    # --------------------------------------------------
+    # ROW 3: MACD & RSI
+    # --------------------------------------------------
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### MACD Indicator")
+        st.markdown("<span style='color:#64748b; font-size:0.9rem;'>12/26 EMA with 9-period signal</span>", unsafe_allow_html=True)
+        fig_macd = go.Figure()
+        fig_macd.add_trace(go.Bar(x=df['Date'], y=df['Histogram'], name='Histogram', marker_color='rgba(151, 20, 77, 0.5)'))
+        fig_macd.add_trace(go.Scatter(x=df['Date'], y=df['MACD'], name='MACD', line=dict(color='#97144D')))
+        fig_macd.add_trace(go.Scatter(x=df['Date'], y=df['Signal'], name='Signal', line=dict(color='#eab308')))
+        fig_macd.update_layout(
+            height=300, margin=dict(l=20, r=20, t=20, b=20),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+            plot_bgcolor='white', paper_bgcolor='white',
+            xaxis=dict(showgrid=True, gridcolor='#f1f5f9', rangebreaks=[dict(bounds=["sat", "mon"])]),
+            yaxis=dict(showgrid=True, gridcolor='#f1f5f9')
+        )
+        st.plotly_chart(fig_macd, use_container_width=True)
 
-  const analyze = () => {
-    setRan((r) => !r);
-  };
+    with col2:
+        st.markdown("#### Relative Strength Index (RSI)")
+        st.markdown("<span style='color:#64748b; font-size:0.9rem;'>14-period, overbought/oversold bands</span>", unsafe_allow_html=True)
+        fig_rsi = go.Figure()
+        fig_rsi.add_trace(go.Scatter(x=df['Date'], y=df['RSI'], name='RSI', line=dict(color='#8b5cf6')))
+        fig_rsi.add_hline(y=70, line_dash="dash", line_color="#ef4444")
+        fig_rsi.add_hline(y=30, line_dash="dash", line_color="#22c55e")
+        fig_rsi.update_layout(
+            height=300, margin=dict(l=20, r=20, t=20, b=20),
+            plot_bgcolor='white', paper_bgcolor='white',
+            xaxis=dict(showgrid=True, gridcolor='#f1f5f9', rangebreaks=[dict(bounds=["sat", "mon"])]),
+            yaxis=dict(showgrid=True, gridcolor='#f1f5f9')
+        )
+        st.plotly_chart(fig_rsi, use_container_width=True)
 
-  const downloadCSV = () => {
-    const blob = new Blob([toCSV(bars)], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${symbol}_data.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+    # --------------------------------------------------
+    # CHART 4: Monthly Volume
+    # --------------------------------------------------
+    st.markdown("#### Monthly Trading Volume")
+    st.markdown("<span style='color:#64748b; font-size:0.9rem;'>Aggregated share volume by month</span>", unsafe_allow_html=True)
+    
+    df['Month_Year'] = df['Date'].dt.to_period('M').astype(str)
+    monthly_vol = df.groupby('Month_Year')['Volume'].sum().reset_index()
+    
+    fig_vol = go.Figure(go.Bar(
+        y=monthly_vol['Month_Year'], 
+        x=monthly_vol['Volume'], 
+        orientation='h', 
+        marker_color='#97144D'
+    ))
+    fig_vol.update_layout(
+        height=350, margin=dict(l=20, r=20, t=20, b=20),
+        plot_bgcolor='white', paper_bgcolor='white',
+        xaxis=dict(showgrid=True, gridcolor='#f1f5f9'),
+        yaxis=dict(showgrid=False, autorange="reversed")
+    )
+    st.plotly_chart(fig_vol, use_container_width=True)
 
-  const priceData = bars.map((b) => ({
-    date: b.date,
-    Close: b.close,
-    "SMA 50": b.sma50,
-    "SMA 200": b.sma200,
-  }));
+    # --------------------------------------------------
+    # RECENT DATA TABLE
+    # --------------------------------------------------
+    st.markdown("#### Recent Data")
+    st.markdown("<span style='color:#64748b; font-size:0.9rem;'>Last 12 trading days</span>", unsafe_allow_html=True)
+    
+    recent_df = df.tail(12).sort_values('Date', ascending=False).copy()
+    
+    display_df = pd.DataFrame({
+        'DATE': recent_df['Date'].dt.strftime('%Y-%m-%d'),
+        'OPEN': recent_df['Open'].apply(lambda x: f"{float(x):.2f}"),
+        'HIGH': recent_df['High'].apply(lambda x: f"{float(x):.2f}"),
+        'LOW': recent_df['Low'].apply(lambda x: f"{float(x):.2f}"),
+        'CLOSE': recent_df['Close'].apply(lambda x: f"{float(x):.2f}"),
+        'CHANGE %': recent_df['Daily_Return_Pct'], 
+        'RSI': recent_df['RSI'].apply(lambda x: f"{float(x):.1f}"),
+        'VOLUME': recent_df['Volume'].apply(lambda x: f"{float(x)/100000:.1f} L")
+    })
 
-  const macdData = bars.filter((b) => b.macd != null).map((b) => ({
-    date: b.date,
-    MACD: b.macd,
-    Signal: b.signal,
-    Histogram: b.histogram,
-  }));
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "CHANGE %": st.column_config.NumberColumn(
+                "CHANGE %",
+                format="%+.2f%%",
+            )
+        }
+    )
 
-  const rsiData = bars.filter((b) => b.rsi != null).map((b) => ({ date: b.date, RSI: b.rsi }));
-
-  const tickFormatter = (v: string) => v.slice(0, 7);
-
-  return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Sidebar + main layout */}
-      <div className="mx-auto flex max-w-[1400px] flex-col lg:flex-row">
-        {/* Sidebar */}
-        <aside className="w-full shrink-0 border-b border-slate-200 bg-white p-6 lg:min-h-screen lg:w-72 lg:border-b-0 lg:border-r">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#97144D] text-white shadow-md">
-              <Landmark className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="text-sm font-bold leading-tight text-slate-800">Axis Bank</div>
-              <div className="text-xs text-slate-400">Stock Analyzer</div>
-            </div>
-          </div>
-
-          <div className="mt-8 space-y-5">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-500">Stock Symbol</label>
-              <input
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#97144D] focus:ring-1 focus:ring-[#97144D]"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-500">Start Date</label>
-              <input
-                type="date"
-                value={start}
-                onChange={(e) => setStart(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#97144D] focus:ring-1 focus:ring-[#97144D]"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-500">End Date</label>
-              <input
-                type="date"
-                value={end}
-                onChange={(e) => setEnd(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#97144D] focus:ring-1 focus:ring-[#97144D]"
-              />
-            </div>
-
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={showBollinger}
-                onChange={(e) => setShowBollinger(e.target.checked)}
-                className="h-4 w-4 rounded accent-[#97144D]"
-              />
-              Show Bollinger Bands
-            </label>
-
-            <button
-              onClick={analyze}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#97144D] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#7d0f40]"
-            >
-              <Play className="h-4 w-4" /> Analyze
-            </button>
-
-            <button
-              onClick={() => setNonce((n) => n + 1)}
-              className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
-            >
-              Regenerate Scenario
-            </button>
-
-            <button
-              onClick={downloadCSV}
-              disabled={bars.length === 0}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-            >
-              <Download className="h-4 w-4" /> Download CSV
-            </button>
-          </div>
-
-          <p className="mt-6 rounded-lg bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-400">
-            Data shown is a simulated market scenario for demonstration, computing the same technical
-            indicators (SMA, MACD, RSI, Bollinger Bands) used in the original dashboard.
-          </p>
-        </aside>
-
-        {/* Main */}
-        <main className="flex-1 p-6 lg:p-8">
-          <header className="mb-6">
-            <h1 className="text-2xl font-bold text-slate-800 lg:text-3xl">Axis Bank Stock Dashboard</h1>
-            <p className="mt-1 text-sm text-slate-400">
-              {symbol} &middot; {start} to {end} &middot; {bars.length} trading days
-            </p>
-          </header>
-
-          {bars.length === 0 || !kpis ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center text-slate-400">
-              Select a valid date range in the sidebar and click Analyze.
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* KPI Row */}
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-                <Kpi
-                  label="Latest Close"
-                  value={formatINR(kpis.lastClose)}
-                  accent
-                  hint={
-                    <span className="inline-flex items-center gap-1">
-                      {kpis.dayChange >= 0 ? (
-                        <ArrowUpRight className="h-3.5 w-3.5" />
-                      ) : (
-                        <ArrowDownRight className="h-3.5 w-3.5" />
-                      )}
-                      {kpis.dayChange >= 0 ? "+" : ""}
-                      {kpis.dayChangePct.toFixed(2)}%
-                    </span>
-                  }
-                />
-                <Kpi label="Avg 52W High" value={formatINR(kpis.avgHigh)} />
-                <Kpi label="Avg 52W Low" value={formatINR(kpis.avgLow)} />
-                <Kpi label="Total Volume" value={formatCompact(kpis.totalVol)} hint="shares traded" />
-                <Kpi
-                  label="Latest RSI"
-                  value={kpis.rsi.toFixed(2)}
-                  hint={kpis.rsi > 70 ? "Overbought" : kpis.rsi < 30 ? "Oversold" : "Neutral"}
-                />
-              </div>
-
-              {/* Price + SMA */}
-              <ChartCard
-                title="Price with Moving Averages"
-                subtitle="Close price, SMA 50 and SMA 200"
-                right={<TrendingUp className="h-5 w-5 text-slate-300" />}
-              >
-                <ResponsiveContainer width="100%" height={340}>
-                  <LineChart data={priceData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="date" tickFormatter={tickFormatter} minTickGap={40} tick={{ fontSize: 11, fill: "#94a3b8" }} />
-                    <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} domain={["auto", "auto"]} />
-                    <Tooltip formatter={(v) => (typeof v === "number" ? formatINR(v) : "-")} />
-                    <Legend />
-                    <Line type="monotone" dataKey="Close" stroke={AXIS_MAROON} strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="SMA 50" stroke="#2563eb" strokeWidth={1.5} dot={false} />
-                    <Line type="monotone" dataKey="SMA 200" stroke="#f59e0b" strokeWidth={1.5} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </ChartCard>
-
-              {/* Candlestick */}
-              <ChartCard
-                title="Candlestick with Bollinger Bands"
-                subtitle="OHLC price action"
-                right={<BarChart3 className="h-5 w-5 text-slate-300" />}
-              >
-                <Candlestick bars={bars} showBollinger={showBollinger} />
-              </ChartCard>
-
-              {/* MACD + RSI grid */}
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-                <ChartCard title="MACD Indicator" subtitle="12/26 EMA with 9-period signal">
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={macdData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="date" tickFormatter={tickFormatter} minTickGap={40} tick={{ fontSize: 11, fill: "#94a3b8" }} />
-                      <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} />
-                      <Tooltip />
-                      <Legend />
-                      <ReferenceLine y={0} stroke="#cbd5e1" />
-                      <Bar dataKey="Histogram" barSize={2}>
-                        {macdData.map((d, i) => (
-                          <Cell key={i} fill={(d.Histogram ?? 0) >= 0 ? "#16a34a" : "#dc2626"} />
-                        ))}
-                      </Bar>
-                      <Line type="monotone" dataKey="MACD" stroke={AXIS_MAROON} strokeWidth={1.5} dot={false} />
-                      <Line type="monotone" dataKey="Signal" stroke="#f59e0b" strokeWidth={1.5} dot={false} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </ChartCard>
-
-                <ChartCard title="Relative Strength Index (RSI)" subtitle="14-period, overbought/oversold bands">
-                  <ResponsiveContainer width="100%" height={280}>
-                    <LineChart data={rsiData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="date" tickFormatter={tickFormatter} minTickGap={40} tick={{ fontSize: 11, fill: "#94a3b8" }} />
-                      <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: "#94a3b8" }} />
-                      <Tooltip />
-                      <ReferenceLine y={70} stroke="#dc2626" strokeDasharray="4 4" label={{ value: "70", fontSize: 10, fill: "#dc2626" }} />
-                      <ReferenceLine y={30} stroke="#16a34a" strokeDasharray="4 4" label={{ value: "30", fontSize: 10, fill: "#16a34a" }} />
-                      <Line type="monotone" dataKey="RSI" stroke="#7c3aed" strokeWidth={1.8} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </ChartCard>
-              </div>
-
-              {/* Monthly Volume */}
-              <ChartCard
-                title="Monthly Trading Volume"
-                subtitle="Aggregated share volume by month"
-                right={<Activity className="h-5 w-5 text-slate-300" />}
-              >
-                <ResponsiveContainer width="100%" height={340}>
-                  <BarChart data={monthly} layout="vertical" margin={{ top: 5, right: 20, left: 30, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis type="number" tickFormatter={formatCompact} tick={{ fontSize: 11, fill: "#94a3b8" }} />
-                    <YAxis type="category" dataKey="month" width={80} tick={{ fontSize: 11, fill: "#64748b" }} />
-                    <Tooltip formatter={(v) => (typeof v === "number" ? formatCompact(v) : "-")} />
-                    <Bar dataKey="volume" fill={AXIS_MAROON} radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartCard>
-
-              {/* Data table */}
-              <ChartCard title="Recent Data" subtitle="Last 12 trading days">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
-                        <th className="px-3 py-2">Date</th>
-                        <th className="px-3 py-2 text-right">Open</th>
-                        <th className="px-3 py-2 text-right">High</th>
-                        <th className="px-3 py-2 text-right">Low</th>
-                        <th className="px-3 py-2 text-right">Close</th>
-                        <th className="px-3 py-2 text-right">Change %</th>
-                        <th className="px-3 py-2 text-right">RSI</th>
-                        <th className="px-3 py-2 text-right">Volume</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bars.slice(-12).reverse().map((b) => (
-                        <tr key={b.date} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                          <td className="px-3 py-2 text-slate-600">{b.date}</td>
-                          <td className="px-3 py-2 text-right text-slate-600">{b.open.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right text-slate-600">{b.high.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right text-slate-600">{b.low.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right font-medium text-slate-800">{b.close.toFixed(2)}</td>
-                          <td className={`px-3 py-2 text-right font-medium ${b.dailyReturnPct >= 0 ? "text-green-600" : "text-red-600"}`}>
-                            {b.dailyReturnPct >= 0 ? "+" : ""}
-                            {b.dailyReturnPct.toFixed(2)}%
-                          </td>
-                          <td className="px-3 py-2 text-right text-slate-600">{b.rsi?.toFixed(1) ?? "-"}</td>
-                          <td className="px-3 py-2 text-right text-slate-500">{formatCompact(b.volume)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </ChartCard>
-            </div>
-          )}
-        </main>
-      </div>
-    </div>
-  );
-}
+if __name__ == "__main__":
+    main()
