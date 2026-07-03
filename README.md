@@ -1,52 +1,53 @@
-📈 Axis Bank Stock Dashboard
-A robust, Streamlit-based web application engineered for quantitative market analysis and technical visualization of equities. While optimized for Axis Bank (AXISBANK.NS), the architecture supports dynamic symbol ingestion via the Yahoo Finance API.
+📊 Axis Bank Stock Dashboard
+Axis Bank Stock Dashboard is a dynamic, Streamlit-based web application engineered for quantitative market analysis and technical visualization of equities. By leveraging Python's analytical stack and the Yahoo Finance API, this project provides a real-time deep dive into price action, volatility, and momentum indicators to assist in algorithmic trading and financial decision-making.
 
-Live Application: Axis Bank Stock Dashboard
+✅ Features
+Dynamic Data Ingestion: Automated fetching and preprocessing of live market data via the yfinance API.
 
-⚡ Core Features
-📊 Advanced Visualization: High-fidelity candlestick charting integrated with toggleable Bollinger Bands for volatility analysis. Features automatic weekend filtering and localized zoom constraints to prevent visual clustering.
+Technical Indicators: Real-time computation of 50-day/200-day SMAs, MACD (12/26 EMA), and 14-period RSI.
 
-📉 Technical Overlays:
+Volatility Analysis: Interactive candlestick charting integrated with toggleable Bollinger Bands to visualize price deviations.
 
-Moving Averages: 50-day and 200-day Simple Moving Averages (SMA) for trend identification.
+Interactive UI: Parameterized controls allowing localized zoom constraints, weekend filtering, and dynamic KPI metric rendering.
 
-Momentum Oscillators: 14-period Relative Strength Index (RSI) with dynamic overbought/oversold threshold indicators.
-
-Trend Following: MACD indicator (12/26 EMA) complete with a 9-period signal line and histogram.
-
-🧮 Real-Time KPI Tracking: Dynamic metric cards calculating day-over-day percentage changes, 52-week rolling highs/lows, and aggregate volume constraints.
-
-📥 Data Pipeline Extraction: One-click CSV export functionality, allowing analysts to download the computed dataset (including all derived technical indicators) for external modeling.
-
-🛠️ Technology Stack
-Frontend framework: Streamlit
-
-Data Ingestion: yfinance
-
-Data Manipulation: pandas, numpy
-
-Data Visualization: plotly.graph_objects
-
-🚀 Local Installation & Execution
-1. Clone the repository and navigate to the directory
-
+🚀 Installation
+1. Clone the repository:
 Bash
-git clone <repository_url>
-cd <repository_directory>
-2. Establish a virtual environment (Recommended)
-
+git clone https://github.com/your-username/Axis_Bank_Dashboard.git
+cd Axis_Bank_Dashboard
+2. Install Python dependencies:
 Bash
-python -m venv venv
-source venv/bin/activate  # On Windows use: venv\Scripts\activate
-3. Install dependencies
+pip install streamlit pandas numpy yfinance plotly Pillow requests
+📈 Core Dashboard Capabilities
+Trend Identification: The moving average overlays allow users to instantly visualize long-term versus short-term market trends.
 
-Bash
-pip install -r requirements.txt
-(Ensure your requirements.txt includes: streamlit, pandas, numpy, yfinance, plotly, requests, Pillow)
+Momentum Shifts: The side-by-side MACD and RSI rendering provides immediate visual cues for overbought or oversold market conditions.
 
-4. Execute the application
+Volume Profiling: Aggregated monthly volume charts expose institutional accumulation or distribution phases.
 
-Bash
-streamlit run DashBoard.py
-⚠️ Data Architecture Note
-The dashboard relies on the yfinance library, which scrapes Yahoo Finance. Be aware that excessive, rapid calls may result in temporary IP-based rate limiting by Yahoo. The application calculates all technical indicators locally in pandas rather than relying on external indicator APIs, ensuring execution speed and data consistency.
+Data Export: Built-in extraction capabilities to download the computed dataframe (including all generated technical indicators) into a CSV for offline algorithmic modeling.
+
+📂 Repository Structure
+DashBoard.py: Main Streamlit application script containing the UI logic and data pipeline.
+
+Axis_logo.png: Local fallback asset for UI branding.
+
+README.md: Project documentation and execution instructions.
+
+🛠️ Requirements
+Python 3.8+
+
+Streamlit
+
+Pandas & NumPy
+
+yfinance
+
+Plotly
+
+👤 Creator
+Raj Suhagiya — B.Sc. Data Science
+
+📧 rajsuhagya@gmail.com
+🔗 linkedin.com/in/raj-suhagiya-bb8921317
+🐙 - Raj156-p
