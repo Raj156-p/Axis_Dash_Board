@@ -222,4 +222,4 @@ def main():
         xaxis_title='',
         yaxis_title='Volume',
         showlegend=False,
-        margin=dict(l=40, r=40, t=40,
+        margin=dict(l=40, r=40, t=40,)
